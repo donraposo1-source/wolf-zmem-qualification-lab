@@ -1,0 +1,63 @@
+name: ZMem authority process-isolation qualification
+
+on:
+  push:
+    branches: [authority-process-isolation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout isolated public lab
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Acquire exact qualified ZMem wheel
+        env:
+          ZMEM_URL: https://github.com/zerkerlabs/zmem/releases/download/v0.1.17/zerker_memory-0.1.17-py3-none-any.whl
+          ZMEM_SHA256: c0b354035d75695293d52fac81fdc7d188a30f5ab06bfe14969844181eb4961f
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --output /tmp/zerker_memory-0.1.17-py3-none-any.whl "$ZMEM_URL"
+          ACTUAL="$(sha256sum /tmp/zerker_memory-0.1.17-py3-none-any.whl | awk '{print $1}')"
+          test "$ACTUAL" = "$ZMEM_SHA256"
+          printf 'ZMEM_VERSION=0.1.17\nZMEM_SHA256=%s\nDIGEST_VERIFIED=PASS\n' "$ACTUAL" | tee process-boundary-artifact.log
+
+      - name: P01-P12 OS-enforced qualification
+        env:
+          ZMEM_WHEEL: /tmp/zerker_memory-0.1.17-py3-none-any.whl
+        run: |
+          bash process_boundary/run_boundary_qualification.sh 2>&1 | tee process-boundary-output.log
+
+      - name: Record zero-cost scope
+        if: always()
+        run: |
+          {
+            echo 'RUNNER=ubuntu-latest standard GitHub-hosted public-repository runner'
+            echo 'PAID_SERVICES=NONE'
+            echo 'EUR_SPEND=0.00'
+            echo 'PROJECT_WOLF_MUTATION=NONE'
+            echo 'PRODUCTION_ACCESS=NONE'
+          } | tee process-boundary-zero-cost.log
+
+      - name: Upload exact process-boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zmem-process-boundary-evidence
+          path: |
+            process-boundary-artifact.log
+            process-boundary-output.log
+            process-boundary-zero-cost.log
+            boundary-evidence/
+          if-no-files-found: error
+          retention-days: 7
