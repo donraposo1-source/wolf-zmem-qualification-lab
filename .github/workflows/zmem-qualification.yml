@@ -32,10 +32,11 @@ jobs:
         env:
           ZMEM_URL: https://github.com/zerkerlabs/zmem/releases/download/v0.1.17/zerker_memory-0.1.17-py3-none-any.whl
           ZMEM_SHA256: c0b354035d75695293d52fac81fdc7d188a30f5ab06bfe14969844181eb4961f
+          ZMEM_WHEEL: zerker_memory-0.1.17-py3-none-any.whl
         run: |
           set -euo pipefail
-          curl --fail --location --silent --show-error --output zmem.whl "$ZMEM_URL"
-          ACTUAL="$(sha256sum zmem.whl | awk '{print $1}')"
+          curl --fail --location --silent --show-error --output "$ZMEM_WHEEL" "$ZMEM_URL"
+          ACTUAL="$(sha256sum "$ZMEM_WHEEL" | awk '{print $1}')"
           echo "ZMEM_ACQUISITION_URL=$ZMEM_URL"
           echo "ZMEM_ARTIFACT_SHA256=$ACTUAL"
           test "$ACTUAL" = "$ZMEM_SHA256"
@@ -44,7 +45,7 @@ jobs:
       - name: Install exact wheel and prove runtime
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check ./zmem.whl
+          python -m pip install --disable-pip-version-check ./zerker_memory-0.1.17-py3-none-any.whl
           python - <<'PY'
           import importlib.metadata
           import zerker_memory
