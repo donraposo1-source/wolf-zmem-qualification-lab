@@ -61,11 +61,24 @@ jobs:
           echo "UPSTREAM_BASELINE=PASS"
 
       - name: T07-T10 and authority boundary
+        id: qualification
         run: |
-          set -euo pipefail
-          python qualification.py
+          set -o pipefail
+          python run_qualification.py 2>&1 | tee qualification-output.log
+
+      - name: Upload exact qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zmem-qualification-evidence
+          path: |
+            qualification-result.json
+            qualification-output.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Zero-cost lab declaration
+        if: always()
         run: |
           echo 'RUNNER=ubuntu-latest standard GitHub-hosted public-repository runner'
           echo 'PAID_SERVICES=NONE'
