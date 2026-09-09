@@ -54,8 +54,7 @@ def denied_db_write(db: Path) -> bool:
 
 def inherited_fd_paths() -> list[str]:
     values = []
-    fd_root = Path("/proc/self/fd")
-    for item in fd_root.iterdir():
+    for item in Path("/proc/self/fd").iterdir():
         try:
             values.append(os.readlink(item))
         except OSError:
@@ -68,9 +67,12 @@ def initial(args) -> dict:
     trusted_module = trusted_root / "app" / "curator_server.py"
     db = Path(args.db)
 
-    env_names = [k for k in os.environ if any(word in k.upper() for word in ("TOKEN", "SECRET", "CAPABILITY", "CURATOR"))]
+    sensitive_env_names = [k for k in os.environ if any(word in k.upper() for word in ("TOKEN", "SECRET", "CAPABILITY", "CURATOR"))]
     cmdline = Path("/proc/self/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+    cmdline_has_secret_marker = any(marker in cmdline.upper() for marker in ("TOKEN=", "SECRET=", "CAPABILITY="))
+    cwd = os.getcwd()
     fd_paths = inherited_fd_paths()
+    socket_stat = os.stat(args.socket)
 
     p01_import_unavailable = importlib.util.find_spec("zerker_memory") is None
     p01_module_unreadable = denied_read(trusted_module)
@@ -100,14 +102,8 @@ def initial(args) -> dict:
     })
     p06 = bool(ordinary.get("ok")) and ordinary.get("status") in {"quarantined", "proposed"}
 
-    deny_candidate = call(args.socket, {
-        "op": "propose",
-        "content": "P08 denied candidate",
-    })
-    restart_candidate = call(args.socket, {
-        "op": "propose",
-        "content": "P12 restart candidate",
-    })
+    deny_candidate = call(args.socket, {"op": "propose", "content": "P08 denied candidate"})
+    restart_candidate = call(args.socket, {"op": "propose", "content": "P12 restart candidate"})
 
     attacker_dir = Path(args.worker_dir) / "attacker_path"
     attacker_dir.mkdir(parents=True, exist_ok=True)
@@ -121,10 +117,10 @@ def initial(args) -> dict:
         p10_chdir_denied = True
 
     p03 = (
-        not env_names
-        and args.operator_uid != str(os.geteuid())
+        not sensitive_env_names
+        and int(args.operator_uid) != os.geteuid()
+        and not cmdline_has_secret_marker
         and all(args.trusted_root not in value and args.db not in value for value in fd_paths)
-        and args.trusted_root not in cmdline
         and denied_read(trusted_root)
     )
 
@@ -134,8 +130,12 @@ def initial(args) -> dict:
         "P01_trusted_module_unreadable": p01_module_unreadable,
         "P02": p02_db_denied,
         "P03": p03,
-        "P03_sensitive_env_names": env_names,
+        "P03_sensitive_env_names": sensitive_env_names,
+        "P03_cmdline_has_secret_marker": cmdline_has_secret_marker,
+        "P03_cwd": cwd,
         "P03_fd_paths": fd_paths,
+        "P03_socket_mode": oct(socket_stat.st_mode & 0o777),
+        "P03_socket_uid": socket_stat.st_uid,
         "P04": p04,
         "P05": p05,
         "P06": p06,
