@@ -1,0 +1,71 @@
+name: ZMem v0.1.17 qualification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout public lab
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Runtime identity
+        run: |
+          set -euo pipefail
+          python --version
+          python -m pip --version
+          uname -a
+
+      - name: Acquire exact ZMem wheel once and verify digest
+        env:
+          ZMEM_URL: https://github.com/zerkerlabs/zmem/releases/download/v0.1.17/zerker_memory-0.1.17-py3-none-any.whl
+          ZMEM_SHA256: c0b354035d75695293d52fac81fdc7d188a30f5ab06bfe14969844181eb4961f
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --output zmem.whl "$ZMEM_URL"
+          ACTUAL="$(sha256sum zmem.whl | awk '{print $1}')"
+          echo "ZMEM_ACQUISITION_URL=$ZMEM_URL"
+          echo "ZMEM_ARTIFACT_SHA256=$ACTUAL"
+          test "$ACTUAL" = "$ZMEM_SHA256"
+          echo "DIGEST_VERIFIED=PASS"
+
+      - name: Install exact wheel and prove runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check ./zmem.whl
+          python - <<'PY'
+          import importlib.metadata
+          import zerker_memory
+          print('ZMEM_IMPORT=PASS')
+          print('ZMEM_VERSION=' + importlib.metadata.version('zerker-memory'))
+          print('ZMEM_MODULE=' + zerker_memory.__file__)
+          PY
+
+      - name: Upstream baseline
+        run: |
+          set -euo pipefail
+          zmem eval
+          echo "UPSTREAM_BASELINE=PASS"
+
+      - name: T07-T10 and authority boundary
+        run: |
+          set -euo pipefail
+          python qualification.py
+
+      - name: Zero-cost lab declaration
+        run: |
+          echo 'RUNNER=ubuntu-latest standard GitHub-hosted public-repository runner'
+          echo 'PAID_SERVICES=NONE'
+          echo 'EUR_SPEND=0.00'
