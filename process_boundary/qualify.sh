@@ -3,8 +3,8 @@ set -euo pipefail
 ROOT="$(mktemp -d)"; chmod 0711 "$ROOT"
 TRUST="$ROOT/trusted"; INGRESS="$ROOT/ingress"; WORK="$ROOT/worker"; PRIV="$TRUST/priv.sock"; PROP="$INGRESS/proposal.sock"; DB="$TRUST/trusted.db"; RESULT="$ROOT/result.env"
 trap 'rm -rf "$ROOT"' EXIT
-useradd -M -s /usr/sbin/nologin zcurator; useradd -M -s /usr/sbin/nologin zworker
-install -d -o zcurator -g zcurator -m 0700 "$TRUST"; install -d -o zcurator -g zworker -m 0770 "$INGRESS"; install -d -o zworker -g zworker -m 0700 "$WORK"
+groupadd zproposal; useradd -M -s /usr/sbin/nologin -G zproposal zcurator; useradd -M -s /usr/sbin/nologin -G zproposal zworker
+install -d -o zcurator -g zcurator -m 0700 "$TRUST"; install -d -o zcurator -g zproposal -m 2770 "$INGRESS"; install -d -o zworker -g zworker -m 0700 "$WORK"
 cat > "$TRUST/privileged_curator.py" <<'PY'
 import json,os,selectors,socket,sqlite3,sys
 priv,prop,db=sys.argv[1:4]
@@ -18,10 +18,8 @@ sel=selectors.DefaultSelector(); sel.register(sp,selectors.EVENT_READ,'priv'); s
 while True:
  for key,_ in sel.select():
   c,_=key.fileobj.accept(); req=json.loads(c.recv(8192) or b'{}'); mid=req.get('id','')
-  if key.data=='proposal':
-   con.execute("insert or ignore into memories values(?,'QUARANTINED',0)",(mid,)); con.commit(); out={'ok':True,'state':'QUARANTINED'}
-  elif req.get('op')=='promote' and req.get('allow') is True:
-   con.execute("update memories set state='PROMOTED',promotions=case when promotions=0 then 1 else promotions end where id=?",(mid,)); con.commit(); out={'ok':True}
+  if key.data=='proposal': con.execute("insert or ignore into memories values(?,'QUARANTINED',0)",(mid,)); con.commit(); out={'ok':True,'state':'QUARANTINED'}
+  elif req.get('op')=='promote' and req.get('allow') is True: con.execute("update memories set state='PROMOTED',promotions=case when promotions=0 then 1 else promotions end where id=?",(mid,)); con.commit(); out={'ok':True}
   elif req.get('op')=='promote': out={'ok':False,'error':'DENIED'}
   else: out={'ok':False,'error':'DENIED'}
   c.send(json.dumps(out).encode()); c.close()
@@ -48,7 +46,6 @@ for _ in range(2):
  s=socket.socket(socket.AF_UNIX); s.connect('$PRIV'); s.send(json.dumps({'op':'promote','id':'m1','allow':True}).encode()); assert json.loads(s.recv(4096))['ok']
 PY
 P07=PASS
-# P12 setup: worker creates a real durable quarantined candidate before curator death.
 runuser -u zworker -- python3 -c "import socket,json; s=socket.socket(socket.AF_UNIX); s.connect('$PROP'); s.send(json.dumps({'id':'m2'}).encode()); assert json.loads(s.recv(4096))['state']=='QUARANTINED'"
 kill "$CURATOR"; wait "$CURATOR" 2>/dev/null || true
 read STATE PROMOS STATE2 PROMOS2 < <(runuser -u zcurator -- python3 - "$DB" <<'PY'
@@ -68,4 +65,4 @@ PY
 kill "$CURATOR"; wait "$CURATOR" 2>/dev/null || true
 for p in P01 P02 P03 P04 P05 P06 P07 P08 P09 P10 P11 P12; do printf '%s=%s\n' "$p" "${!p}"; done | tee "$RESULT"
 if grep -q '=FAIL' "$RESULT"; then exit 1; fi
-printf '%s\n' 'WORKER_CAN_IMPORT_PRIVILEGED_SURFACE=NO' 'WORKER_CAN_WRITE_TRUSTED_DB=NO' 'WORKER_HAS_OPERATOR_CAPABILITY=NO' 'WORKER_CAN_SELF_PROMOTE=NO' 'CURATOR_CAN_PROMOTE=YES' 'CURATOR_RESTART_SAFE=YES' 'OS_ENFORCEMENT_USED=separate Unix UIDs + worker-accessible proposal socket + 0700 trusted directory + 0600 privileged DB/socket/module' | tee -a "$RESULT"
+printf '%s\n' 'WORKER_CAN_IMPORT_PRIVILEGED_SURFACE=NO' 'WORKER_CAN_WRITE_TRUSTED_DB=NO' 'WORKER_HAS_OPERATOR_CAPABILITY=NO' 'WORKER_CAN_SELF_PROMOTE=NO' 'CURATOR_CAN_PROMOTE=YES' 'CURATOR_RESTART_SAFE=YES' 'OS_ENFORCEMENT_USED=separate Unix UIDs + dedicated proposal Unix group/socket + 0700 trusted directory + 0600 privileged DB/socket/module' | tee -a "$RESULT"
