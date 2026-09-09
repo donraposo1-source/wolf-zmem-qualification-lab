@@ -1,0 +1,26 @@
+name: ZMem process boundary qualification
+on:
+  push:
+    branches: ['qualify/process-boundary-v1']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime identity
+        run: |
+          id
+          uname -a
+          python3 --version
+      - name: Qualify OS process boundary
+        run: sudo bash process_boundary/qualify.sh
+      - name: Zero-cost declaration
+        if: always()
+        run: |
+          echo 'RUNNER=standard public GitHub-hosted runner'
+          echo 'PAID_SERVICES=NONE'
+          echo 'EUR_SPEND=0.00'
