@@ -1,0 +1,1 @@
+ChatGPT Codex Connector write-access probe. Safe to remove after verification.
