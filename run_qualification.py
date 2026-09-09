@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import qualification as q
+from zerker_memory.maintenance import build_memory_maintenance_plan
 
 
 def t07(root: Path) -> dict:
@@ -121,11 +122,14 @@ def t08(root: Path) -> dict:
     original_prev = event["prev_event_hash"]
     store.conn.execute("UPDATE events SET prev_event_hash = ? WHERE seq = ?", ("f" * 64, event["seq"]))
     store.conn.commit()
-    post = store.verify_memory_write_receipt(receipt)
-    tamper_results["event_linkage"] = not bool(post.get("ok"))
-    assert tamper_results["event_linkage"], f"native verification accepted tampered event linkage: {post}"
+    integrity = build_memory_maintenance_plan(db)
+    tamper_results["event_linkage"] = not bool(integrity.get("ok"))
+    assert tamper_results["event_linkage"], f"native maintenance integrity path accepted tampered event linkage: {integrity}"
+    assert "event chain predecessor mismatch" in str((integrity.get("error") or {}).get("message", "")), integrity
     store.conn.execute("UPDATE events SET prev_event_hash = ? WHERE seq = ?", (original_prev, event["seq"]))
     store.conn.commit()
+    restored_integrity = build_memory_maintenance_plan(db)
+    assert restored_integrity.get("ok"), restored_integrity
     assert store.verify_memory_write_receipt(receipt).get("ok")
     q.close_store(store)
     return {"status": "PASS", "tamper_rejections": tamper_results}
