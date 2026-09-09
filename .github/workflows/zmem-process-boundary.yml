@@ -36,6 +36,7 @@ jobs:
         env:
           ZMEM_WHEEL: /tmp/zerker_memory-0.1.17-py3-none-any.whl
         run: |
+          set -o pipefail
           bash process_boundary/run_boundary_qualification.sh 2>&1 | tee process-boundary-output.log
 
       - name: Record zero-cost scope
