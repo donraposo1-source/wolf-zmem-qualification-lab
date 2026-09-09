@@ -173,7 +173,9 @@ def main() -> int:
     args = parser.parse_args()
     result = initial(args) if args.mode == "initial" else replay(args)
     print(json.dumps(result, sort_keys=True))
-    return 0 if all(v is not False for k, v in result.items() if k.startswith("P")) else 1
+    canonical_tests = {f"P{i:02d}" for i in range(1, 13)}
+    relevant = [value for key, value in result.items() if key in canonical_tests]
+    return 0 if relevant and all(value is True for value in relevant) else 1
 
 
 if __name__ == "__main__":
