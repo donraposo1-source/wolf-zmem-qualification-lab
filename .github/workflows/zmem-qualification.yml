@@ -24,9 +24,7 @@ jobs:
       - name: Runtime identity
         run: |
           set -euo pipefail
-          python --version
-          python -m pip --version
-          uname -a
+          { python --version; python -m pip --version; uname -a; } 2>&1 | tee runtime-identity.log
 
       - name: Acquire exact ZMem wheel once and verify digest
         env:
@@ -37,16 +35,18 @@ jobs:
           set -euo pipefail
           curl --fail --location --silent --show-error --output "$ZMEM_WHEEL" "$ZMEM_URL"
           ACTUAL="$(sha256sum "$ZMEM_WHEEL" | awk '{print $1}')"
-          echo "ZMEM_ACQUISITION_URL=$ZMEM_URL"
-          echo "ZMEM_ARTIFACT_SHA256=$ACTUAL"
-          test "$ACTUAL" = "$ZMEM_SHA256"
-          echo "DIGEST_VERIFIED=PASS"
+          {
+            echo "ZMEM_ACQUISITION_URL=$ZMEM_URL"
+            echo "ZMEM_ARTIFACT_SHA256=$ACTUAL"
+            test "$ACTUAL" = "$ZMEM_SHA256"
+            echo "DIGEST_VERIFIED=PASS"
+          } | tee artifact-integrity.log
 
       - name: Install exact wheel and prove runtime
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check ./zerker_memory-0.1.17-py3-none-any.whl
-          python - <<'PY'
+          python - <<'PY' | tee zmem-runtime.log
           import importlib.metadata
           import zerker_memory
           print('ZMEM_IMPORT=PASS')
@@ -57,8 +57,9 @@ jobs:
       - name: Upstream baseline
         run: |
           set -euo pipefail
-          zmem eval
-          echo "UPSTREAM_BASELINE=PASS"
+          set -o pipefail
+          zmem eval 2>&1 | tee upstream-baseline.log
+          echo "UPSTREAM_BASELINE=PASS" | tee -a upstream-baseline.log
 
       - name: T07-T10 and authority boundary
         id: qualification
@@ -66,20 +67,27 @@ jobs:
           set -o pipefail
           python run_qualification.py 2>&1 | tee qualification-output.log
 
+      - name: Zero-cost lab declaration
+        if: always()
+        run: |
+          {
+            echo 'RUNNER=ubuntu-latest standard GitHub-hosted public-repository runner'
+            echo 'PAID_SERVICES=NONE'
+            echo 'EUR_SPEND=0.00'
+          } | tee zero-cost.log
+
       - name: Upload exact qualification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zmem-qualification-evidence
           path: |
+            runtime-identity.log
+            artifact-integrity.log
+            zmem-runtime.log
+            upstream-baseline.log
             qualification-result.json
             qualification-output.log
+            zero-cost.log
           if-no-files-found: error
           retention-days: 7
-
-      - name: Zero-cost lab declaration
-        if: always()
-        run: |
-          echo 'RUNNER=ubuntu-latest standard GitHub-hosted public-repository runner'
-          echo 'PAID_SERVICES=NONE'
-          echo 'EUR_SPEND=0.00'
