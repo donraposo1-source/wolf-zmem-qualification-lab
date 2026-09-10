@@ -41,11 +41,12 @@ jobs:
           echo "ZMEM_ARTIFACT_SHA256=$ACTUAL" | tee trusted-zmem-artifact.log
           test "$ACTUAL" = "$ZMEM_SHA256"
           echo 'DIGEST_VERIFIED=PASS' | tee -a trusted-zmem-artifact.log
+          sudo install -m 0644 "$ZMEM_WHEEL" /tmp/zerker_memory-0.1.17-py3-none-any.whl
 
       - name: Qualify trusted ZMem mutation path
         run: |
           set -euo pipefail
-          sudo bash trusted_zmem/qualify.sh "$GITHUB_WORKSPACE/zerker_memory-0.1.17-py3-none-any.whl" "$(command -v python)" 2>&1 | tee trusted-zmem-qualification.log
+          sudo bash trusted_zmem/qualify.sh /tmp/zerker_memory-0.1.17-py3-none-any.whl "$(command -v python)" 2>&1 | tee trusted-zmem-qualification.log
 
       - name: Zero-cost declaration
         if: always()
