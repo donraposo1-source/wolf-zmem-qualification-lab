@@ -86,7 +86,7 @@ def load_receipt(cid):
 
 def reconcile(st,cid):
  uri='lab://trusted-zmem/'+cid
- rows=st.conn.execute("SELECT id,status,content FROM memories WHERE source_uri=? ORDER BY rowid",(uri,)).fetchall()
+ rows=st.conn.execute("SELECT id,status,content FROM memories WHERE content=? ORDER BY rowid",(load_proposal(cid)[0]["content"],)).fetchall()
  return rows
 
 def finalize(st,cid,proposal,proposal_sha,memory_id):
@@ -186,13 +186,13 @@ start_curator
 if runuser -u zworker -- python3 -c "import socket; s=socket.socket(socket.AF_UNIX); s.connect('$PRIV')" 2>/dev/null; then A_IPC=FAIL; else A_IPC=PASS; fi
 if runuser -u zworker -- python3 -c "import sqlite3; sqlite3.connect('file:$DB?mode=rw',uri=True).execute('pragma user_version=7')" 2>/dev/null; then A_DB=FAIL; else A_DB=PASS; fi
 # Generic deny first proves worker-provided allow/promote fields did not authorize anything.
-DENY="$(priv_call '{\"op\":\"decide\",\"candidate_id\":\"C1-real-zmem\",\"allow\":false,\"actor\":\"operator\",\"target_id\":\"other\"}')"
+DENY="$(priv_call '{"op":"decide","candidate_id":"C1-real-zmem","allow":false,"actor":"operator","target_id":"other"}')"
 python3 -c 'import json,sys; r=json.loads(sys.argv[1]); assert not r["ok"] and r["state"]=="QUARANTINED"' "$DENY" && B_SELF=PASS || B_SELF=FAIL
 # Confused-deputy fields cannot redirect the canonical candidate selected by the trusted caller.
-ALLOW="$(priv_call '{\"op\":\"decide\",\"candidate_id\":\"C1-real-zmem\",\"allow\":true,\"target_id\":\"attacker-selected\",\"source\":\"human\",\"actor\":\"operator\"}')"
+ALLOW="$(priv_call '{"op":"decide","candidate_id":"C1-real-zmem","allow":true,"target_id":"attacker-selected","source":"human","actor":"operator"}')"
 python3 -c 'import json,sys; r=json.loads(sys.argv[1]); assert r["ok"] and r["receipt"]["body"]["candidate_id"]=="C1-real-zmem" and r["receipt"]["body"]["status"]=="active"' "$ALLOW" && G_DEPUTY=PASS || G_DEPUTY=FAIL
 # Replay must return the same durable memory identity, not create another memory.
-REPLAY="$(priv_call '{\"op\":\"decide\",\"candidate_id\":\"C1-real-zmem\",\"allow\":true}')"
+REPLAY="$(priv_call '{"op":"decide","candidate_id":"C1-real-zmem","allow":true}')"
 python3 - "$ALLOW" "$REPLAY" <<'PY'
 import json,sys
 a=json.loads(sys.argv[1]); b=json.loads(sys.argv[2]); assert b['ok'] and b['replayed']; assert a['receipt']['body']['memory_id']==b['receipt']['body']['memory_id']
@@ -200,7 +200,7 @@ PY
 H_REPLAY=PASS
 # Kill curator completely, then clean restart and replay/recover from durable ZMem+receipt only.
 kill "$CURATOR"; wait "$CURATOR" 2>/dev/null || true; CURATOR=""; rm -f "$PRIV"; start_curator
-RECOVER="$(priv_call '{\"op\":\"decide\",\"candidate_id\":\"C1-real-zmem\",\"allow\":true}')"
+RECOVER="$(priv_call '{"op":"decide","candidate_id":"C1-real-zmem","allow":true}')"
 python3 - "$RECOVER" <<'PY'
 import json,sys,hashlib
 r=json.loads(sys.argv[1]); b=r['receipt']['body']; assert r['ok'] and r['replayed']; assert b['status']=='active'; assert b['content_sha256']==hashlib.sha256(b'C1 cobalt orchard trusted mutation canary').hexdigest(); z=b['zmem_receipt']; assert z['source_uri']=='lab://trusted-zmem/C1-real-zmem'
@@ -229,7 +229,7 @@ import json,socket,sys,time
 s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.send(json.dumps({'op':'decide','candidate_id':'C2-unknown-reconcile','allow':True,'fault':'after_remember'}).encode()); time.sleep(.3)
 PY
 wait "$CURATOR" 2>/dev/null || true; CURATOR=""; rm -f "$PRIV"; start_curator
-C2R="$(priv_call '{\"op\":\"decide\",\"candidate_id\":\"C2-unknown-reconcile\",\"allow\":true}')"
+C2R="$(priv_call '{"op":"decide","candidate_id":"C2-unknown-reconcile","allow":true}')"
 runuser -u zcurator -- "$VENV/bin/python" - "$DB" "$C2R" <<'PY'
 import json,sys
 from pathlib import Path
