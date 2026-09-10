@@ -46,6 +46,8 @@ jobs:
       - name: Qualify trusted ZMem mutation path
         run: |
           set -euo pipefail
+          sed -i '/^DENY=/a echo "DENY_RESPONSE=$DENY"' trusted_zmem/qualify.sh
+          sed -i '/^ALLOW=/a echo "ALLOW_RESPONSE=$ALLOW"' trusted_zmem/qualify.sh
           sudo bash trusted_zmem/qualify.sh /tmp/zerker_memory-0.1.17-py3-none-any.whl "$(command -v python)" 2>&1 | tee trusted-zmem-qualification.log
 
       - name: Zero-cost declaration
