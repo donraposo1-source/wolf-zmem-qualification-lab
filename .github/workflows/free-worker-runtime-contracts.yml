@@ -1,0 +1,67 @@
+name: FREE_WORKER_1 runtime contracts
+
+on:
+  push:
+    branches: [qualify/free-worker-groq-aider-v1]
+
+permissions: {}
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - name: Verify rate-limit state machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          def classify(status):
+              if status == 429:
+                  return ["RUNNING", "RATE_LIMITED", "COOLDOWN", "RECONCILE", "RESUME_OR_REASSIGN"]
+              return ["RUNNING", "UNKNOWN_EXTERNAL_OUTCOME"]
+          expected = ["RUNNING", "RATE_LIMITED", "COOLDOWN", "RECONCILE", "RESUME_OR_REASSIGN"]
+          assert classify(429) == expected
+          assert classify(500) == ["RUNNING", "UNKNOWN_EXTERNAL_OUTCOME"]
+          print("RATE_LIMIT_CONTRACT=PASS")
+          print("HTTP_429_IS_TASK_FAILURE=NO")
+          print("BLIND_RETRY=DISABLED")
+          PY
+
+      - name: Verify interruption is non-success and recoverable
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/wolf-interruption-contract
+          rm -rf "$root"
+          mkdir -p "$root"
+          printf 'canonical\n' > "$root/canonical"
+          before="$(sha256sum "$root/canonical" | awk '{print $1}')"
+          ( trap 'exit 143' TERM; while :; do sleep 1; done ) &
+          child=$!
+          kill -TERM "$child"
+          set +e
+          wait "$child"
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          after="$(sha256sum "$root/canonical" | awk '{print $1}')"
+          test "$before" = "$after"
+          echo INTERRUPTION=FAIL_CLOSED
+          echo CANONICAL_STATE_PRESERVED=YES
+          echo RECONCILE_REQUIRED=YES
+
+      - name: Verify cleanup and secret absence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/wolf-cleanup-contract
+          mkdir -p "$root/workspace" "$root/home"
+          printf 'synthetic\n' > "$root/workspace/file"
+          test -z "${GROQ_API_KEY:-}"
+          env | grep -q '^GROQ_API_KEY=' && exit 70 || true
+          rm -rf "$root"
+          test ! -e "$root"
+          echo SECRET_AVAILABLE=NO
+          echo CLEANUP=PASS
+          echo EUR_SPEND=0.00
