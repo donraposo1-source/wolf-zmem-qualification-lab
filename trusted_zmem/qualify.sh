@@ -135,8 +135,29 @@ PY
 chown zcurator:zcurator "$TRUST/admission.py" "$TRUST/curator.py"
 chmod 0600 "$TRUST/admission.py" "$TRUST/curator.py"
 
-start_admission(){ runuser -u zcurator -- "$VENV/bin/python" "$TRUST/admission.py" "$PROP" "$PROPOSALS" & ADMISSION=$!; for i in {1..50}; do [[ -S "$PROP" ]] && return 0; sleep .1; done; return 1; }
-start_curator(){ rm -f "$PRIV"; runuser -u zcurator -- "$VENV/bin/python" "$TRUST/curator.py" "$PRIV" "$DB" "$PROPOSALS" "$RECEIPTS" "$INTENTS" & CURATOR=$!; for i in {1..50}; do [[ -S "$PRIV" ]] && return 0; sleep .1; done; return 1; }
+socket_ready(){
+ python3 - "$1" <<'PY'
+import socket,sys
+s=socket.socket(socket.AF_UNIX)
+try:
+ s.connect(sys.argv[1]); s.send(b'{}'); assert s.recv(65536)
+except (FileNotFoundError,ConnectionRefusedError):
+ raise SystemExit(1)
+finally:
+ s.close()
+PY
+}
+start_admission(){
+ runuser -u zcurator -- "$VENV/bin/python" "$TRUST/admission.py" "$PROP" "$PROPOSALS" & ADMISSION=$!
+ for i in {1..50}; do socket_ready "$PROP" 2>/dev/null && return 0; kill -0 "$ADMISSION" 2>/dev/null || return 1; sleep .1; done
+ return 1
+}
+start_curator(){
+ rm -f "$PRIV"
+ runuser -u zcurator -- "$VENV/bin/python" "$TRUST/curator.py" "$PRIV" "$DB" "$PROPOSALS" "$RECEIPTS" "$INTENTS" & CURATOR=$!
+ for i in {1..50}; do socket_ready "$PRIV" 2>/dev/null && return 0; kill -0 "$CURATOR" 2>/dev/null || return 1; sleep .1; done
+ return 1
+}
 priv_call(){ python3 - "$PRIV" "$1" <<'PY'
 import json,socket,sys
 s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.send(sys.argv[2].encode()); data=s.recv(262144); print(data.decode())
