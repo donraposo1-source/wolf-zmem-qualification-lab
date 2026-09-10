@@ -1,0 +1,233 @@
+name: FREE_WORKER_1 Groq Aider qualification
+
+on:
+  push:
+    branches:
+      - qualify/free-worker-groq-aider-v1
+
+permissions: {}
+
+concurrency:
+  group: free-worker-groq-aider-v1
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: isolated-groq-aider
+    runs-on: ubuntu-24.04-arm
+    environment: free-worker-groq-aider
+    timeout-minutes: 20
+    env:
+      LAB: ${{ runner.temp }}/wolf-free-worker-1
+      VENV: ${{ runner.temp }}/aider-venv
+      AIDER_HOME: ${{ runner.temp }}/aider-home
+      AIDER_VERSION: "0.86.2"
+      AIDER_WHEEL_SHA256: "64f6a0c66c9f4633ad9f479bca3e64ebcba02b9da03c6b604b74a44736b2416e"
+      MODEL: "groq/openai/gpt-oss-120b"
+
+    steps:
+      - name: Runtime evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = "Linux"
+          test "$(uname -m)" = "aarch64"
+          echo "RUNTIME_OS=Linux"
+          echo "RUNTIME_ARCH=aarch64"
+          python3 --version
+          git --version
+          echo "GITHUB_TOKEN_PERMISSIONS=NONE_REQUESTED"
+
+      - name: Install and verify pinned Aider package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip download --disable-pip-version-check --no-deps --only-binary=:all: \
+            --dest "${RUNNER_TEMP}" "aider-chat==${AIDER_VERSION}"
+          wheel="${RUNNER_TEMP}/aider_chat-${AIDER_VERSION}-py3-none-any.whl"
+          test -f "$wheel"
+          actual="$(sha256sum "$wheel" | awk '{print $1}')"
+          test "$actual" = "$AIDER_WHEEL_SHA256"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --disable-pip-version-check "$wheel"
+          installed="$($VENV/bin/python -c 'import importlib.metadata; print(importlib.metadata.version("aider-chat"))')"
+          test "$installed" = "$AIDER_VERSION"
+          echo "AIDER_VERSION=$installed"
+          echo "AIDER_PACKAGE_SHA256=$actual"
+
+      - name: Build synthetic repository and prove failing baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$LAB" "$AIDER_HOME"
+          mkdir -p "$LAB/src" "$LAB/tests" "$AIDER_HOME"
+          cat > "$LAB/src/arithmetic.py" <<'PY'
+          def sum_even(values):
+              return sum(values)
+          PY
+          cat > "$LAB/src/presentation.py" <<'PY'
+          def render_total(value):
+              return str(value)
+          PY
+          cat > "$LAB/tests/test_contract.py" <<'PY'
+          import unittest
+          from src.arithmetic import sum_even
+          from src.presentation import render_total
+
+          class ContractTests(unittest.TestCase):
+              def test_sum_even(self):
+                  self.assertEqual(sum_even([1, 2, 3, 4]), 6)
+
+              def test_render_total(self):
+                  self.assertEqual(render_total(6), "TOTAL:6")
+
+          if __name__ == "__main__":
+              unittest.main()
+          PY
+          cat > "$LAB/task.txt" <<'TXT'
+          Modify only src/arithmetic.py and src/presentation.py so the existing tests pass.
+          sum_even must sum only even integers. render_total must return TOTAL:<value>.
+          Do not edit tests. Do not commit. Do not inspect environment variables or credentials.
+          TXT
+          cd "$LAB"
+          git init -q
+          git config user.name "Wolf Qualification"
+          git config user.email "qualification@invalid.local"
+          git add src tests task.txt
+          git commit -qm "synthetic baseline"
+          sha256sum tests/test_contract.py > "$RUNNER_TEMP/test-contract.before.sha256"
+          if PYTHONPATH="$LAB" python3 -m unittest discover -s tests -v >"$RUNNER_TEMP/baseline.stdout" 2>"$RUNNER_TEMP/baseline.stderr"; then
+            echo "BASELINE_UNEXPECTED_PASS"
+            exit 71
+          fi
+          echo "BASELINE=EXPECTED_FAIL"
+
+      - name: Fail closed unless secure Groq secret is present
+        shell: bash
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GROQ_API_KEY:-}" ]; then
+            echo "WORKER_STATE=BLOCKED_SECRET_INJECTION"
+            exit 78
+          fi
+          echo "::add-mask::$GROQ_API_KEY"
+          echo "SECRET_INJECTION=PRESENT_MASKED"
+
+      - name: MODEL_EDIT - Aider via Groq Free
+        id: model_edit
+        shell: bash
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${GROQ_API_KEY:-}"
+          echo "::add-mask::$GROQ_API_KEY"
+          cd "$LAB"
+          set +e
+          HOME="$AIDER_HOME" "$VENV/bin/aider" \
+            --model "$MODEL" \
+            --message-file "$LAB/task.txt" \
+            --no-auto-commits \
+            --no-gitignore \
+            --no-check-update \
+            --no-analytics \
+            src/arithmetic.py src/presentation.py \
+            >"$LAB/aider.stdout" 2>"$LAB/aider.stderr"
+          rc=$?
+          set -e
+
+          secret_leak=0
+          for target in "$LAB" "$AIDER_HOME"; do
+            if grep -R --binary-files=without-match -F -q -- "$GROQ_API_KEY" "$target" 2>/dev/null; then
+              secret_leak=1
+            fi
+          done
+          if [ "$secret_leak" -ne 0 ]; then
+            rm -rf "$LAB" "$AIDER_HOME"
+            echo "SECRET_BOUNDARY=FAILED"
+            exit 70
+          fi
+
+          if grep -Eqi '(^|[^0-9])429([^0-9]|$)|rate.?limit|too many requests|retry-after|quota' "$LAB/aider.stdout" "$LAB/aider.stderr"; then
+            rm -f "$LAB/aider.stdout" "$LAB/aider.stderr"
+            echo "WORKER_STATE=RATE_LIMITED"
+            echo "NEXT_STATE=COOLDOWN"
+            echo "AFTER_COOLDOWN=RECONCILE"
+            exit 75
+          fi
+
+          stdout_bytes="$(wc -c < "$LAB/aider.stdout")"
+          stderr_bytes="$(wc -c < "$LAB/aider.stderr")"
+          rm -f "$LAB/aider.stdout" "$LAB/aider.stderr"
+          echo "AIDER_EXIT=$rc"
+          echo "AIDER_STDOUT_BYTES=$stdout_bytes"
+          echo "AIDER_STDERR_BYTES=$stderr_bytes"
+          if [ "$rc" -ne 0 ]; then
+            echo "WORKER_STATE=UNKNOWN_EXTERNAL_OUTCOME"
+            exit "$rc"
+          fi
+          echo "WORKER_STATE=COMPLETED"
+
+      - name: VERIFY - secretless independent tests and bounded diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${GROQ_API_KEY:-}"
+          cd "$LAB"
+          sha256sum tests/test_contract.py > "$RUNNER_TEMP/test-contract.after.sha256"
+          cmp "$RUNNER_TEMP/test-contract.before.sha256" "$RUNNER_TEMP/test-contract.after.sha256"
+          mapfile -t changed < <(git diff --name-only | sort)
+          printf '%s\n' "${changed[@]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = "src/arithmetic.py"
+          test "${changed[1]}" = "src/presentation.py"
+          PYTHONPATH="$LAB" python3 -m unittest discover -s tests -v
+          if git log -p --all | grep -Eqi 'gsk_[A-Za-z0-9]+'; then
+            echo "SECRET_PATTERN_IN_HISTORY"
+            exit 70
+          fi
+          echo "SYNTHETIC_TASK=PASS"
+          echo "TEST_STATUS=PASS"
+          echo "SECRET_AVAILABLE_DURING_VERIFY=NO"
+
+      - name: Rate-limit state-machine contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          def classify(http_status):
+              if http_status == 429:
+                  return ["RUNNING", "RATE_LIMITED", "COOLDOWN", "RECONCILE", "RESUME_OR_REASSIGN"]
+              return ["RUNNING", "UNKNOWN_EXTERNAL_OUTCOME"]
+
+          expected = ["RUNNING", "RATE_LIMITED", "COOLDOWN", "RECONCILE", "RESUME_OR_REASSIGN"]
+          assert classify(429) == expected
+          assert "task_failure" not in [x.lower() for x in expected]
+          print("RATE_LIMIT_CONTRACT=PASS")
+          print("BLIND_RETRY=DISABLED")
+          PY
+
+      - name: Interruption and cleanup contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="$RUNNER_TEMP/interruption-marker"
+          rm -f "$marker"
+          ( trap 'exit 143' TERM; while :; do sleep 1; done ) &
+          child=$!
+          kill -TERM "$child"
+          set +e
+          wait "$child"
+          rc=$?
+          set -e
+          test "$rc" -ne 0
+          test ! -e "$marker"
+          rm -rf "$LAB" "$AIDER_HOME" "$VENV"
+          test ! -e "$LAB"
+          test ! -e "$AIDER_HOME"
+          test ! -e "$VENV"
+          echo "INTERRUPTION=FAIL_CLOSED"
+          echo "CLEANUP=PASS"
+          echo "EUR_SPEND=0.00"
