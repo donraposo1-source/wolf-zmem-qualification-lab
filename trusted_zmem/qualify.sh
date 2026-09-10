@@ -236,7 +236,7 @@ from pathlib import Path
 from zerker_memory.store import MemoryStore
 r=json.loads(sys.argv[2]); assert r['ok'] and r.get('reconciled') is True
 st=MemoryStore(Path(sys.argv[1])); st.init() if hasattr(st,'init') else None
-rows=st.conn.execute("select id,status from memories where source_uri='lab://trusted-zmem/C2-unknown-reconcile'").fetchall(); assert len(rows)==1 and rows[0]['status']=='active'; st.conn.close()
+rows=st.conn.execute("select id,status from memories where content=?",("C2 ambiguous outcome reconciliation canary",)).fetchall(); assert len(rows)==1 and rows[0]['status']=='active'; st.conn.close()
 PY
 UNKNOWN_RECONCILE=PASS
 
