@@ -46,35 +46,6 @@ jobs:
       - name: Qualify trusted ZMem mutation path
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('trusted_zmem/qualify.sh')
-          text = p.read_text()
-          lines = text.splitlines()
-          names = ('DENY=', 'ALLOW=', 'REPLAY=', 'RECOVER=', 'C2R=')
-          out = []
-          changed = 0
-          for line in lines:
-              if line.startswith(names):
-                  fixed = line.replace('\\"', '"')
-                  changed += fixed != line
-                  line = fixed
-              out.append(line)
-          assert changed == 5, f'expected 5 normalized IPC request lines, got {changed}'
-          text = '\n'.join(out) + '\n'
-          # source_uri is native receipt provenance in ZMem v0.1.17, not a memories column.
-          # Synthetic candidate content is unique; exact-content reconciliation therefore
-          # detects the committed ambiguous mutation without blind retry.
-          old = 'rows=st.conn.execute("SELECT id,status,content FROM memories WHERE source_uri=? ORDER BY rowid",(uri,)).fetchall()'
-          new = 'rows=st.conn.execute("SELECT id,status,content FROM memories WHERE content=? ORDER BY rowid",(load_proposal(cid)[0]["content"],)).fetchall()'
-          assert old in text
-          text = text.replace(old, new, 1)
-          old2 = 'rows=st.conn.execute("select id,status from memories where source_uri=\'lab://trusted-zmem/C2-unknown-reconcile\'").fetchall(); assert len(rows)==1 and rows[0][\'status\']==\'active\'; st.conn.close()'
-          new2 = 'rows=st.conn.execute("select id,status from memories where content=?",("C2 ambiguous outcome reconciliation canary",)).fetchall(); assert len(rows)==1 and rows[0][\'status\']==\'active\'; st.conn.close()'
-          assert old2 in text
-          text = text.replace(old2, new2, 1)
-          p.write_text(text)
-          PY
           sudo bash trusted_zmem/qualify.sh /tmp/zerker_memory-0.1.17-py3-none-any.whl "$(command -v python)" 2>&1 | tee trusted-zmem-qualification.log
 
       - name: Zero-cost declaration
