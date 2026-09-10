@@ -46,8 +46,22 @@ jobs:
       - name: Qualify trusted ZMem mutation path
         run: |
           set -euo pipefail
-          sed -i '/^DENY=/a echo "DENY_RESPONSE=$DENY"' trusted_zmem/qualify.sh
-          sed -i '/^ALLOW=/a echo "ALLOW_RESPONSE=$ALLOW"' trusted_zmem/qualify.sh
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('trusted_zmem/qualify.sh')
+          lines = p.read_text().splitlines()
+          names = ('DENY=', 'ALLOW=', 'REPLAY=', 'RECOVER=', 'C2R=')
+          out = []
+          changed = 0
+          for line in lines:
+              if line.startswith(names):
+                  fixed = line.replace('\\"', '"')
+                  changed += fixed != line
+                  line = fixed
+              out.append(line)
+          assert changed == 5, f'expected 5 normalized IPC request lines, got {changed}'
+          p.write_text('\n'.join(out) + '\n')
+          PY
           sudo bash trusted_zmem/qualify.sh /tmp/zerker_memory-0.1.17-py3-none-any.whl "$(command -v python)" 2>&1 | tee trusted-zmem-qualification.log
 
       - name: Zero-cost declaration
