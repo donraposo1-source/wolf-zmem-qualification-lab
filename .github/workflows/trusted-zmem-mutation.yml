@@ -50,23 +50,21 @@ jobs:
           from pathlib import Path
           p = Path('trusted_zmem/qualify.sh')
           text = p.read_text()
-          # Normalize shell JSON literals from the generated public harness.
           lines = text.splitlines()
           names = ('DENY=', 'ALLOW=', 'REPLAY=', 'RECOVER=', 'C2R=')
           out = []
           changed = 0
           for line in lines:
               if line.startswith(names):
-                  fixed = line.replace('\\\\"', '"')
+                  fixed = line.replace('\\"', '"')
                   changed += fixed != line
                   line = fixed
               out.append(line)
           assert changed == 5, f'expected 5 normalized IPC request lines, got {changed}'
           text = '\n'.join(out) + '\n'
-          # ZMem v0.1.17 stores source_uri in native write receipts, not the memories table.
-          # For this synthetic lab each admitted candidate has unique exact content, so
-          # ambiguous-outcome reconciliation uses exact admitted content and fails closed
-          # if zero/multiple rows are not safely resolvable.
+          # source_uri is native receipt provenance in ZMem v0.1.17, not a memories column.
+          # Synthetic candidate content is unique; exact-content reconciliation therefore
+          # detects the committed ambiguous mutation without blind retry.
           old = 'rows=st.conn.execute("SELECT id,status,content FROM memories WHERE source_uri=? ORDER BY rowid",(uri,)).fetchall()'
           new = 'rows=st.conn.execute("SELECT id,status,content FROM memories WHERE content=? ORDER BY rowid",(load_proposal(cid)[0]["content"],)).fetchall()'
           assert old in text
