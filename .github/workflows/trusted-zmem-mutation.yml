@@ -59,6 +59,10 @@ jobs:
                   changed += fixed != line
                   line = fixed
               out.append(line)
+              if line.startswith('DENY='):
+                  out.append('echo "DENY_RESPONSE=$DENY"')
+              if line.startswith('ALLOW='):
+                  out.append('echo "ALLOW_RESPONSE=$ALLOW"')
           assert changed == 5, f'expected 5 normalized IPC request lines, got {changed}'
           p.write_text('\n'.join(out) + '\n')
           PY
