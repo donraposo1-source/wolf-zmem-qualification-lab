@@ -1,0 +1,1 @@
+{"name":"wolf-bar-assistant-domain-harvest","private":true,"type":"module","scripts":{"test":"node --test"}}
