@@ -1,0 +1,10 @@
+import test from"node:test";import assert from"node:assert/strict";import{selectBaseline,evaluate}from"./policy.mjs";
+const h=[{ingredientId:"GIN",currency:"EUR",observedAt:"2026-08-01",unitCost:1.8,invoiceId:"A"},{ingredientId:"GIN",currency:"EUR",observedAt:"2026-09-01",unitCost:1.9,invoiceId:"B"}],cur={ingredientId:"GIN",currency:"EUR",observedAt:"2026-09-24",unitCost:2.1,invoiceId:"C"},recipes=[{id:"NEGRONI",ingredients:{GIN:30},monthlyServes:200},{id:"GIN_TONIC",ingredients:{GIN:50},monthlyServes:400},{id:"AMERICANO",ingredients:{GIN:0},monthlyServes:300}];
+test("latest prior compatible observation is baseline",()=>assert.equal(selectBaseline(h,cur).invoiceId,"B"));
+test("material threshold creates alert",()=>{const r=evaluate({history:h,current:cur,recipes});assert.equal(r.status,"ALERT");assert.ok(r.pct>5)});
+test("below threshold suppresses alert",()=>assert.equal(evaluate({history:h,current:{...cur,unitCost:1.91},recipes,thresholdPct:5}).status,"BELOW_THRESHOLD"));
+test("only affected recipes appear",()=>assert.deepEqual(evaluate({history:h,current:cur,recipes}).alerts.map(x=>x.recipeId).sort(),["GIN_TONIC","NEGRONI"]));
+test("economic impact ranked by absolute monthly impact",()=>assert.equal(evaluate({history:h,current:cur,recipes}).alerts[0].recipeId,"GIN_TONIC"));
+test("owner alert retains baseline/current invoice evidence",()=>{const a=evaluate({history:h,current:cur,recipes}).ownerAlert;assert.equal(a.fromInvoice,"B");assert.equal(a.toInvoice,"C")});
+test("no baseline yields no alert",()=>assert.deepEqual(evaluate({history:[],current:cur,recipes}),{status:"NO_BASELINE",alerts:[]}));
+test("invalid zero baseline fails closed",()=>assert.throws(()=>evaluate({history:[{...h[0],observedAt:"2026-09-01",unitCost:0}],current:cur,recipes}),/INVALID_BASELINE/));
