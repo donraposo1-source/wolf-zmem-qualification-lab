@@ -1,0 +1,27 @@
+name: mvp-c-pipeline-contract-v1
+on:
+  push:
+    branches: [harvest/mvp-c-pipeline-contract-v1]
+  pull_request:
+    branches: [main]
+permissions: {}
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pipeline contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd harvest/mvp-c-pipeline-contract-v1
+          node --test contract.test.mjs 2>&1 | tee /tmp/pipeline-contract.log
+          sha256sum /tmp/pipeline-contract.log | sed 's/^/RESULT_SHA256=/'
+          grep -F "paid_minor bigint" schema.sql
+          grep -F "enable row level security" schema.sql
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f /tmp/pipeline-contract.log
+          echo CLEANUP=PASS

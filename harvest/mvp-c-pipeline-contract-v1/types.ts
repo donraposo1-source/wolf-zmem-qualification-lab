@@ -1,0 +1,11 @@
+export type Currency=string;
+export type Money={minor:number;currency:Currency};
+export type OCRInvoiceLine={tenantId:string;barId:string;invoiceId:string;lineId:string;sourceObject:string;rawText:string;description:string;quantityText:string;priceText:string;ocrConfidence:number};
+export type SupplierProductIdentity={supplierId:string;supplierSku:string|null;normalizedLabel:string};
+export type IngredientMapping={status:"VERIFIED"|"REVIEW_REQUIRED";ingredientId:string|null;evidence:string[]};
+export type NormalizedPurchase={amount:number;unit:"ml"|"cl"|"oz";ml:number};
+export type IngredientPriceObservation={tenantId:string;barId:string;ingredientId:string;invoiceId:string;lineId:string;supplierId:string;observedAt:string;paidPrice:Money;purchased:NormalizedPurchase;unitCostMinorPerMl:number;provenance:{sourceObject:string;ocrLineId:string}};
+export type PriceDelta={previousObservationId:string;currentObservationId:string;absoluteDeltaMinorPerMl:number;percentageDelta:number|null};
+export type RecipeCostImpact={recipeId:string;previousCost:Money;currentCost:Money;deltaMinor:number};
+export type MenuMarginImpact={menuItemId:string;previousMargin:Money;currentMargin:Money;deltaMinor:number};
+export type EvidencePayload={processingKey:string;tenantId:string;barId:string;invoiceId:string;sourceObject:string;ocrLineId:string;mappingEvidence:string[];status:"VERIFIED"|"REVIEW_REQUIRED"|"REJECTED"};
