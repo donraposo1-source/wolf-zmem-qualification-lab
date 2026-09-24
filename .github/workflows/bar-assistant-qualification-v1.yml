@@ -1,6 +1,10 @@
 name: WOLF Bar Assistant Qualification V1
 run-name: ${{ inputs.mission_id }}
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/bar-assistant-qualification-v1.yml'
   workflow_dispatch:
     inputs:
       mission_id:
