@@ -1,0 +1,65 @@
+name: WOLF Bar Assistant Qualification V1
+run-name: ${{ inputs.mission_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      mission_id:
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: wolf-bar-assistant-${{ inputs.mission_id }}
+  cancel-in-progress: false
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Validate PUBLIC_SAFE contract
+        shell: bash
+        env:
+          MISSION_ID: ${{ inputs.mission_id }}
+        run: |
+          set -euo pipefail
+          [[ "$MISSION_ID" =~ ^[A-Za-z0-9._-]{1,96}$ ]] || exit 64
+          echo DATA_CLASS=PUBLIC_SAFE
+          echo COST_POLICY=EUR0_ONLY
+          echo EUR_SPEND=0
+          echo UPSTREAM_REPO=karlomikus/bar-assistant
+          echo UPSTREAM_REF=ef64de6dc679a09b928e543d08e455efba73640a
+      - name: Install PHP 8.4
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e4608c9c89fba0b8d90bd2a39f
+        with:
+          php-version: '8.4'
+          extensions: bcmath, intl, ffi
+          ini-values: ffi.enable=true, zend.max_allowed_stack_size=-1
+      - name: Fetch exact public upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/karlomikus/bar-assistant.git /tmp/bar-assistant
+          git -C /tmp/bar-assistant checkout --detach ef64de6dc679a09b928e543d08e455efba73640a
+          test "$(git -C /tmp/bar-assistant rev-parse HEAD)" = ef64de6dc679a09b928e543d08e455efba73640a
+          grep -q "MIT License" /tmp/bar-assistant/LICENSE
+      - name: Install dependencies
+        shell: bash
+        working-directory: /tmp/bar-assistant
+        run: composer install --prefer-dist --no-progress --no-interaction
+      - name: Execute bounded domain tests
+        shell: bash
+        working-directory: /tmp/bar-assistant
+        run: |
+          set -euo pipefail
+          cp .env.dist .env
+          php artisan key:generate
+          php artisan test --testsuite=Unit 2>&1 | tee /tmp/bar-assistant-test.log
+          sha256sum /tmp/bar-assistant-test.log | sed 's/^/RESULT_SHA256=/'
+          echo FINAL_STATUS=DONE
+          echo EUR_SPEND=0
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -rf /tmp/bar-assistant /tmp/bar-assistant-test.log
+          test ! -e /tmp/bar-assistant
+          echo CLEANUP=PASS
