@@ -1,4 +1,5 @@
 name: WOLF Cloud Heavy Worker V1
+run-name: ${{ inputs.mission_id }}
 
 on:
   workflow_dispatch:
