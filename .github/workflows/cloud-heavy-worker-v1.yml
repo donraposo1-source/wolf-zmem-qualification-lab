@@ -2,7 +2,8 @@ name: WOLF Cloud Heavy Worker V1
 
 on:
   push:
-    branches: [qualify/cloud-heavy-worker-v1, 'qualify/cloud-heavy-e2e-*']
+    branches: ['qualify/cloud-heavy-e2e-*']
+    paths: ['cloud_worker/dispatch/**']
 
 permissions: {}
 
