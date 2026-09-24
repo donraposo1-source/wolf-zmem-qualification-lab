@@ -1,0 +1,17 @@
+import test from"node:test";import assert from"node:assert/strict";import{selectBaseline,evaluate}from"./policy.mjs";
+const h=[{ingredientId:"GIN",currency:"EUR",observedAt:"2026-08-01",unitCost:1.8,invoiceId:"A"},{ingredientId:"GIN",currency:"EUR",observedAt:"2026-09-01",unitCost:1.9,invoiceId:"B"}],cur={ingredientId:"GIN",currency:"EUR",observedAt:"2026-09-24",unitCost:2.1,invoiceId:"C"},recipes=[{id:"NEGRONI",ingredients:{GIN:30},monthlyServes:200},{id:"GIN_TONIC",ingredients:{GIN:50},monthlyServes:400},{id:"AMERICANO",ingredients:{GIN:0},monthlyServes:300}];
+test("latest prior compatible observation is baseline",()=>assert.equal(selectBaseline(h,cur).invoiceId,"B"));
+test("material threshold creates alert",()=>{const r=evaluate({history:h,current:cur,recipes});assert.equal(r.status,"ALERT");assert.ok(r.pct>5)});
+test("below threshold suppresses alert",()=>assert.equal(evaluate({history:h,current:{...cur,unitCost:1.91},recipes,thresholdPct:5}).status,"BELOW_THRESHOLD"));
+test("only affected recipes appear",()=>assert.deepEqual(evaluate({history:h,current:cur,recipes}).alerts.map(x=>x.recipeId).sort(),["GIN_TONIC","NEGRONI"]));
+test("economic impact ranked by absolute monthly impact",()=>assert.equal(evaluate({history:h,current:cur,recipes}).alerts[0].recipeId,"GIN_TONIC"));
+test("owner alert retains baseline/current invoice evidence",()=>{const a=evaluate({history:h,current:cur,recipes}).ownerAlert;assert.equal(a.fromInvoice,"B");assert.equal(a.toInvoice,"C")});
+test("no baseline yields no alert",()=>assert.deepEqual(evaluate({history:[],current:cur,recipes}),{status:"NO_BASELINE",alerts:[]}));
+test("invalid zero baseline fails closed",()=>assert.throws(()=>evaluate({history:[{...h[0],observedAt:"2026-09-01",unitCost:0}],current:cur,recipes}),/INVALID_BASELINE/));
+
+test("future current and wrong ingredient/currency are excluded from baseline",()=>{const x=[...h,{ingredientId:"GIN",currency:"EUR",observedAt:"2026-10-01",unitCost:9,invoiceId:"FUTURE"},{ingredientId:"VERMOUTH",currency:"EUR",observedAt:"2026-09-20",unitCost:9,invoiceId:"WRONG_ING"},{ingredientId:"GIN",currency:"USD",observedAt:"2026-09-20",unitCost:9,invoiceId:"WRONG_CUR"}];assert.equal(selectBaseline(x,cur).invoiceId,"B")});
+test("exact threshold boundary alerts for increase and decrease",()=>{assert.equal(evaluate({history:h,current:{...cur,unitCost:1.995},recipes,thresholdPct:5}).status,"ALERT");assert.equal(evaluate({history:h,current:{...cur,unitCost:1.805},recipes,thresholdPct:5}).status,"ALERT")});
+test("zero monthly serves has zero impact but remains deterministic",()=>{const rs=[{id:"ZERO",ingredients:{GIN:30},monthlyServes:0}];assert.equal(evaluate({history:h,current:cur,recipes:rs}).alerts[0].estimatedMonthlyImpactMinor,0)});
+test("negative or invalid monthly serves fail closed",()=>{assert.throws(()=>evaluate({history:h,current:cur,recipes:[{id:"BAD",ingredients:{GIN:30},monthlyServes:-1}]}),/INVALID_MONTHLY_SERVES/);assert.throws(()=>evaluate({history:h,current:cur,recipes:[{id:"BAD",ingredients:{GIN:30},monthlyServes:NaN}]}),/INVALID_MONTHLY_SERVES/)});
+test("tie ranking is deterministic by recipe id",()=>{const rs=[{id:"B",ingredients:{GIN:30},monthlyServes:10},{id:"A",ingredients:{GIN:30},monthlyServes:10}];assert.deepEqual(evaluate({history:h,current:cur,recipes:rs}).alerts.map(x=>x.recipeId),["A","B"])});
+test("invalid threshold fails closed",()=>assert.throws(()=>evaluate({history:h,current:cur,recipes,thresholdPct:-1}),/INVALID_THRESHOLD/));
