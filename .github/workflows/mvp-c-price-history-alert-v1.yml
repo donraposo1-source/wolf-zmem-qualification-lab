@@ -1,0 +1,25 @@
+name: mvp-c-price-history-alert-v1
+on:
+  push:
+    branches: [harvest/mvp-c-price-history-alert-v1]
+  pull_request:
+    branches: [main]
+permissions: {}
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify history and alert policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd harvest/mvp-c-price-history-alert-v1
+          node --test policy.test.mjs 2>&1 | tee /tmp/alert.log
+          sha256sum /tmp/alert.log | sed 's/^/RESULT_SHA256=/'
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f /tmp/alert.log
+          echo CLEANUP=PASS
