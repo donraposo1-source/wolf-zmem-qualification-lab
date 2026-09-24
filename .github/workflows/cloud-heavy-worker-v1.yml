@@ -1,14 +1,24 @@
 name: WOLF Cloud Heavy Worker V1
 
 on:
-  push:
-    branches: ['qualify/cloud-heavy-e2e-*']
-    paths: ['cloud_worker/dispatch/**', '.github/workflows/cloud-heavy-worker-v1.yml']
-
+  workflow_dispatch:
+    inputs:
+      mission_id:
+        description: PUBLIC_SAFE mission identifier
+        required: true
+        type: string
+      runner_ref:
+        description: Immutable allowlisted runner commit
+        required: true
+        type: string
+      runner_path:
+        description: Allowlisted runner path
+        required: true
+        type: string
 permissions: {}
 
 concurrency:
-  group: wolf-cloud-heavy-worker-v1
+  group: wolf-cloud-heavy-worker-v1-${{ inputs.mission_id }}
   cancel-in-progress: false
 
 jobs:
@@ -16,6 +26,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Validate dispatch inputs
+        shell: bash
+        env:
+          MISSION_ID: ${{ inputs.mission_id }}
+          INPUT_RUNNER_REF: ${{ inputs.runner_ref }}
+          INPUT_RUNNER_PATH: ${{ inputs.runner_path }}
+        run: |
+          set -euo pipefail
+          [[ "$MISSION_ID" =~ ^[A-Za-z0-9._-]{1,96}$ ]] || exit 64
+          test "$INPUT_RUNNER_REF" = "1427167affb7b853ed17189ccecd4435e2c58953" || exit 64
+          test "$INPUT_RUNNER_PATH" = "cloud_worker/public_safe_synthetic_v1.py" || exit 64
+          echo "MISSION_ID=$MISSION_ID"
+          echo "DATA_CLASS=PUBLIC_SAFE"
+          echo "EUR_SPEND=0"
+
       - name: Fetch immutable allowlisted runner
         shell: bash
         env:
