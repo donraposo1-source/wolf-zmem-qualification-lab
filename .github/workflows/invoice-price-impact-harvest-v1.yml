@@ -1,0 +1,25 @@
+name: invoice-price-impact-harvest-v1
+on:
+  push:
+    branches: [harvest/invoice-price-impact-v1]
+  pull_request:
+    branches: [main]
+permissions: {}
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Execute invoice price impact primitives
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd harvest/invoice-price-impact-v1
+          npm test 2>&1 | tee /tmp/impact-test.log
+          sha256sum /tmp/impact-test.log | sed 's/^/RESULT_SHA256=/'
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f /tmp/impact-test.log
+          echo CLEANUP=PASS
