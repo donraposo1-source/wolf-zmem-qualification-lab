@@ -1,6 +1,10 @@
 name: WOLF Bar Assistant Qualification V1
-run-name: ${{ inputs.mission_id || format('bar-assistant-pr-{0}', github.event.pull_request.number) }}
+run-name: ${{ inputs.mission_id || format('bar-assistant-{0}', github.sha) }}
 on:
+  push:
+    branches: [qualify/bar-assistant-real-work-v1]
+    paths:
+      - '.github/workflows/bar-assistant-qualification-v1.yml'
   pull_request:
     branches: [main]
     paths:
@@ -12,7 +16,7 @@ on:
         type: string
 permissions: {}
 concurrency:
-  group: wolf-bar-assistant-${{ inputs.mission_id || format('pr-{0}', github.event.pull_request.number) }}
+  group: wolf-bar-assistant-${{ inputs.mission_id || github.sha }}
   cancel-in-progress: false
 jobs:
   qualify:
@@ -22,7 +26,7 @@ jobs:
       - name: Validate PUBLIC_SAFE contract
         shell: bash
         env:
-          MISSION_ID: ${{ inputs.mission_id || format('bar-assistant-pr-{0}', github.event.pull_request.number) }}
+          MISSION_ID: ${{ inputs.mission_id || format('bar-assistant-{0}', github.sha) }}
         run: |
           set -euo pipefail
           [[ "$MISSION_ID" =~ ^[A-Za-z0-9._-]{1,96}$ ]] || exit 64
