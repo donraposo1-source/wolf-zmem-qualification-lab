@@ -1,0 +1,74 @@
+name: WOLF Cloud Heavy Worker V1
+
+on:
+  push:
+    branches: ['qualify/cloud-heavy-e2e-*']
+    paths: ['cloud_worker/dispatch/**', '.github/workflows/cloud-heavy-worker-v1.yml']
+
+permissions: {}
+
+concurrency:
+  group: wolf-cloud-heavy-worker-v1
+  cancel-in-progress: false
+
+jobs:
+  public-safe-heavy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch immutable allowlisted runner
+        shell: bash
+        env:
+          RUNNER_REF: 1427167affb7b853ed17189ccecd4435e2c58953
+          RUNNER_PATH: cloud_worker/public_safe_synthetic_v1.py
+        run: |
+          set -euo pipefail
+          case "$RUNNER_PATH" in
+            cloud_worker/public_safe_synthetic_v1.py) ;;
+            *) echo "RUNNER_PATH_DENIED"; exit 64 ;;
+          esac
+          url="https://raw.githubusercontent.com/donraposo1-source/wolf-zmem-qualification-lab/$RUNNER_REF/$RUNNER_PATH"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "$url" -o /tmp/wolf-cloud-runner.py
+          echo "CLOUD_WORKER_STARTED=YES"
+          echo "RUNNER_IDENTITY=github-hosted/ubuntu-latest"
+          echo "RUNNER_REF=$RUNNER_REF"
+          echo "RUNNER_PATH=$RUNNER_PATH"
+          sha256sum /tmp/wolf-cloud-runner.py | sed 's/^/RUNNER_SHA256=/'
+
+      - name: Execute PUBLIC_SAFE synthetic heavy workload
+        shell: bash
+        env:
+          RUNNER_REF: 1427167affb7b853ed17189ccecd4435e2c58953
+          RUNNER_PATH: cloud_worker/public_safe_synthetic_v1.py
+        run: |
+          set -euo pipefail
+          test -z "${WOLF_PRIVATE_DATA:-}"
+          start="$(date +%s)"
+          python3 /tmp/wolf-cloud-runner.py | tee /tmp/wolf-cloud-result.json
+          python3 - <<'PY'
+          import json
+          p="/tmp/wolf-cloud-result.json"
+          d=json.load(open(p))
+          assert d["schema"]=="wolf-cloud-worker-v1"
+          assert d["class"]=="PUBLIC_SAFE"
+          assert d["exit_code"]==0
+          assert d["eur_spend"]=="0"
+          assert d["final_status"]=="DONE"
+          print("INPUT_SHA256="+d["input_sha256"])
+          print("OUTPUT_SHA256="+d["output_sha256"])
+          print("WORKLOAD_DURATION_MS="+str(d["duration_ms"]))
+          print("EXIT_CODE=0")
+          print("EUR_SPEND=0")
+          print("FINAL_STATUS=DONE")
+          PY
+          end="$(date +%s)"
+          echo "JOB_WALL_SECONDS=$((end-start))"
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/wolf-cloud-runner.py /tmp/wolf-cloud-result.json
+          test ! -e /tmp/wolf-cloud-runner.py
+          test ! -e /tmp/wolf-cloud-result.json
+          echo "CLEANUP=PASS"
