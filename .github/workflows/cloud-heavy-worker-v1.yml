@@ -3,7 +3,7 @@ name: WOLF Cloud Heavy Worker V1
 on:
   push:
     branches: ['qualify/cloud-heavy-e2e-*']
-    paths: ['cloud_worker/dispatch/**']
+    paths: ['cloud_worker/dispatch/**', '.github/workflows/cloud-heavy-worker-v1.yml']
 
 permissions: {}
 
